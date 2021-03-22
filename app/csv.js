@@ -12,18 +12,23 @@ function createCSVStreamPipe(fileName, startLine, endLine) {
   return readStreamPipe;
 }
 
-function csvReadStream(fileName, startLine, endLine, onData, onEnd, onError) {
+function csvReadStream(fileName, startLine, endLine) {
   const readStreamPipe = createCSVStreamPipe(fileName, startLine, endLine);
   let index = startLine;
-  readStreamPipe.on('error', onError);
-  readStreamPipe.on('end', onEnd);
-  readStreamPipe.on('data', (row) => {
-    readStreamPipe.pause();
-    row.unshift([index]);
-    onData(row);
-    index += 1;
-    readStreamPipe.resume();
-  });
+  function attachHandler({ onData, onEnd, onError }) {
+    readStreamPipe.on('error', onError);
+    readStreamPipe.on('end', onEnd);
+    readStreamPipe.on('data', (row) => {
+      readStreamPipe.pause();
+      row.unshift([index]);
+      onData(row);
+      index += 1;
+      readStreamPipe.resume();
+    });
+  }
+  return {
+    attachHandler,
+  };
 }
 
 module.exports = {

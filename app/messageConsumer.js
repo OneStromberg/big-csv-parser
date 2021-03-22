@@ -42,17 +42,17 @@ function validateFields(fileFields, fields) {
   return result;
 }
 
-async function sendDeadLetterToQueue(channel, incomeData) {
-  const message = Buffer.from(incomeData.join(','));
-  return channel.sendToQueue(BAD_LETTER_QUEUE, message, {
-    persistent: true,
-  });
-}
-
 async function runConsumer(queue, validateList, mapInitialMessageToDataObject, indexes) {
   const connection = await amqp.connect('amqp://localhost');
   const channel = await connection.createChannel();
   const collection = await getDAUCollection(queue, indexes);
+
+  async function sendDeadLetterToQueue(incomeData) {
+    const message = Buffer.from(incomeData.join(','));
+    return channel.sendToQueue(BAD_LETTER_QUEUE, message, {
+      persistent: true,
+    });
+  }
 
   await channel.assertQueue(BAD_LETTER_QUEUE, {
     durable: true,
@@ -67,7 +67,7 @@ async function runConsumer(queue, validateList, mapInitialMessageToDataObject, i
       const invalidKeys = validateFields(validateList, payloadList);
       if (invalidKeys.length) {
         invalidKeys.unshift(['Wrong fields name', lineNumber, queue]);
-        await sendDeadLetterToQueue(channel, invalidKeys);
+        await sendDeadLetterToQueue(invalidKeys);
       }
     } else {
       const initialMessage = buildInitialMessage(validateList, payloadList);
@@ -80,13 +80,13 @@ async function runConsumer(queue, validateList, mapInitialMessageToDataObject, i
           await collection.insertOne(mappedObject);
         } catch (error) {
           if (error.code === 11000) {
-            await sendDeadLetterToQueue(channel, ['Duplicated Line', lineNumber, queue, error.message]);
+            await sendDeadLetterToQueue(['Duplicated Line', lineNumber, queue, error.message]);
           } else {
-            await sendDeadLetterToQueue(channel, ['Unknown Error', lineNumber, queue, error.code]);
+            await sendDeadLetterToQueue(['Unknown Error', lineNumber, queue, error.code]);
           }
         }
       } else {
-        await sendDeadLetterToQueue(channel, ['Wrong fields validation', lineNumber, queue]);
+        await sendDeadLetterToQueue(['Wrong fields validation', lineNumber, queue]);
       }
     }
     channel.ack(msg);

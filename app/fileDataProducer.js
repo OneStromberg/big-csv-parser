@@ -5,15 +5,7 @@ const { AMPQ_HOST, BAD_LETTER_QUEUE } = require('./constants');
 const { csvReadStream } = require('./csv');
 const { getArgv } = require('./utils');
 
-async function main() {
-  const argv = getArgv();
-  const startLine = argv.start || 0;
-  const endLine = argv.end || 0;
-  const queue = argv.queue || 'data_transfer_queue_2';
-  const fileName = argv.fileName || 'hospital_1_Patient';
-
-  const fullFileName = path.join(`${fileName}.csv`);
-
+async function createAmqpCSVHandler(queue) {
   const connection = await amqp.connect(AMPQ_HOST);
   const channel = await connection.createChannel();
   await channel.assertQueue(queue, {
@@ -22,15 +14,14 @@ async function main() {
   await channel.assertQueue(BAD_LETTER_QUEUE, {
     durable: true,
   });
-
-  function onReadData(row) {
+  function onData(row) {
     const message = Buffer.from(row.join(','));
     channel.sendToQueue(queue, message, {
       persistent: true,
     });
   }
 
-  function onReadEnd() {
+  function onEnd() {
     channel.checkQueue(queue).then(() => {
       connection.close();
       process.exit(0);
@@ -47,8 +38,25 @@ async function main() {
       process.exit(0);
     });
   }
+  return {
+    onData,
+    onEnd,
+    onError,
+  };
+}
 
-  csvReadStream(fullFileName, startLine, endLine, onReadData, onReadEnd, onError);
+async function main() {
+  const argv = getArgv();
+  const startLine = argv.start || 0;
+  const endLine = argv.end || 0;
+  const queue = argv.queue || 'data_transfer_queue_2';
+  const fileName = argv.fileName || 'hospital_1_Patient';
+
+  const fullFileName = path.join(`${fileName}.csv`);
+
+  const ampqCSVHandler = await createAmqpCSVHandler(queue);
+  const readStream = csvReadStream(fullFileName, startLine, endLine);
+  readStream.attachHandler(ampqCSVHandler);
 }
 
 (async () => {
